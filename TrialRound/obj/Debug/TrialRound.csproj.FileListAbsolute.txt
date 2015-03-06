@@ -1,0 +1,6 @@
+C:\Users\Vincent\Documents\GITHUB\Hashcode2014\TrialRound\bin\Debug\TrialRound.exe.config
+C:\Users\Vincent\Documents\GITHUB\Hashcode2014\TrialRound\bin\Debug\TrialRound.exe
+C:\Users\Vincent\Documents\GITHUB\Hashcode2014\TrialRound\bin\Debug\TrialRound.pdb
+C:\Users\Vincent\Documents\GITHUB\Hashcode2014\TrialRound\obj\Debug\TrialRound.csprojResolveAssemblyReference.cache
+C:\Users\Vincent\Documents\GITHUB\Hashcode2014\TrialRound\obj\Debug\TrialRound.exe
+C:\Users\Vincent\Documents\GITHUB\Hashcode2014\TrialRound\obj\Debug\TrialRound.pdb
