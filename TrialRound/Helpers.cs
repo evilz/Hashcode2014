@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -27,15 +29,26 @@ namespace TrialRound
             return text;
         }
 
+        public static T Convert<T>(this string input)
+        {
+            var converter = TypeDescriptor.GetConverter(typeof(T));
+            if (converter != null)
+            {
+                //Cast ConvertFromString(string text) : object to (T)
+                return (T)converter.ConvertFromString(input);
+            }
+            return default(T);
+        }
+
         public static T ChangeType<T>(this object obj)
         {
-            return (T)Convert.ChangeType(obj, typeof(T));
+            return (T)System.Convert.ChangeType(obj, typeof(T));
         }
 
         public static IEnumerable<T> SplitAndParse<T>(this string input, char separator = ' ')
         {
             var splited = input.Split(separator);
-            var result = splited.Select(ChangeType<T>);
+            var result = splited.Select(Convert<T>);
             return result;
         }
 
@@ -45,6 +58,50 @@ namespace TrialRound
             return line.SplitAndParse<T>(separator);
         }
 
+      
+        //public static T[,] CreateMatrix<T>(this StreamReader reader,Size matrixSize , char columnSeparator = ' ')
+        //{
+        //    int i = 0, j = 0;
+        //    var matrix = new T[matrixSize.Width, matrixSize.Height];
+
+        //    var line = reader.ReadLine();
+
+        //    while (!string.IsNullOrEmpty(line))
+        //    {
+        //        var cols =line.Split(columnSeparator);
+        //        foreach (var col in cols)
+        //        {
+        //            matrix[i, j] = col.Convert<T>();
+        //            j++;
+        //        }
+        //        i++;
+        //    }
+
+        //    return matrix;
+        //}
+
+        public static TMatrix[,] CreateMatrix<TMatrix, TVal>(this StreamReader reader, Size matrixSize, Func<int, int, TVal, TMatrix[,], TMatrix> matcher)
+        {
+            int i = 0, j = 0;
+            var matrix = new TMatrix[matrixSize.Height, matrixSize.Width];
+
+            var line = reader.ReadLine();
+
+            while (!string.IsNullOrEmpty(line))
+            {
+                j = 0;
+                foreach (var col in line)
+                {
+                    var val = col.ToString().Convert<TVal>();
+                    matrix[i, j] = matcher(i,j,val,matrix);
+                    j++;
+                }
+                i++;
+                line = reader.ReadLine();
+            }
+
+            return matrix;
+        }
 
 
     }
