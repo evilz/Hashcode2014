@@ -3,7 +3,7 @@ using System;
 
 namespace TrialRound
 {
-    public class ColoredConsoleLogger
+    public class DebugConsoleLogger
     {
         public void Log(string message)
         {

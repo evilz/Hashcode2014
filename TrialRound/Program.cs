@@ -1,288 +1,216 @@
 ﻿using System;
-using System.IO;
-using System.Linq;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.Runtime.CompilerServices;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-using LibLog.Logging;
-using LibLog.Logging.LogProviders;
+using TrialRound.Extentions;
+using TrialRound.Model;
 
 namespace TrialRound
 {
-    public class Cell
+    public static class Program
     {
-        public Cell()
-        {
-            Scorings = new List<CellScoring>();
-        }
-        public int X { get; set; }
-        public int Y { get; set; }
-
-        public Cell[,] Matrix { get; set; }
-
-        public bool Value { get; set; }
-
-        public List<CellScoring> Scorings
-        {
-            get;
-            set;
-        }
-
-
-        public List<CellScoring> SortedScorings
-        {
-            get { return Scorings.OrderByDescending(s => s.Score).ToList(); }
-        }
-
-    }
-    public struct CellScoring
-    {
-        public Cell Cell { get; set; }
-
-        public int Size { get; set; }
-
-        public float Score
-        {
-            get
-            {
-                // check range
-                if (TopLeft.Y < 0 || TopLeft.X < 0 || BottomRight.Y >= Cell.Matrix.GetLength(0) ||
-                    BottomRight.X >= Cell.Matrix.GetLength(1))
-                    return -1;
-
-                if (Size == 0 && !Cell.Value)
-                {
-                    return 0;
-                }
-
-                var totalCell = (Size*2 + 1)*(Size*2 + 1);
-                var cellToClean = CellToClear().Count();
-
-                if (totalCell/2 < cellToClean)
-                {
-                    return 0;
-                }
-
-                var computed = (Size * 2 + 1) * (Size * 2 + 1) / (float)(1 + CellToClear().Count());
-                return computed;
-            }
-        }
-
-        public IEnumerable<Cell> CellToClear()
-        {
-
-            for (int i = TopLeft.Y; i <= BottomRight.Y && i < Cell.Matrix.GetLength(1) ; ++i)
-            {
-                for (int j = TopLeft.X; j <= BottomRight.X && j < Cell.Matrix.GetLength(0); ++j)
-                {
-                    if (Cell.Matrix[j, i].Value == false)
-                    {
-                        yield return Cell.Matrix[j, i];
-                    }
-                }
-            }
-        }
-
-        public Point TopLeft { get { return new Point(Cell.X - Size, Cell.Y - Size); } }
-        public Point BottomRight { get { return new Point(Cell.X + Size, Cell.Y + Size); } }
-
-    }
-
-    public class Program
-    {
-
-        private static readonly ILog Logger = LogProvider.For<Program>();
-
-        private static Cell[,] matrix;
-
-        private static List<Cell> CellToDelete = new List<Cell>();
-
-        public static CellScoring ComputeCellScoringForSize(Cell cell, int size)
-        {
-            var scoring = new CellScoring
-            {
-                Cell = cell,
-                Size = size
-            };
-            return scoring;
-        }
-
-        public static CellScoring ComputeCellScoring(Point cellIndex)
-        {
-            var cell = matrix[cellIndex.Y, cellIndex.X];
-            var currentScoringNode = matrix[cellIndex.Y, cellIndex.X].Scorings.Last();
-
-            for (int size = 1; true; size++)
-            {
-
-                Console.WriteLine("Analyse de la size {0}, ({1},{2})", size, cellIndex.Y, cellIndex.X);
-
-                var newScoring = ComputeCellScoringForSize(cell, size);
-
-                if (currentScoringNode.Score >= newScoring.Score)
-                {
-                    break;
-                }
-
-                currentScoringNode = newScoring;
-                cell.Scorings.Add(newScoring);
-            }
-
-            //var t = Console.ForegroundColor;
-            //Console.ForegroundColor = ConsoleColor.Green;
-            //Console.WriteLine("Best Score {0} in  size of {1}", currentWeightNode.Value.Score, currentWeightNode.Value.Size);
-            //Console.ForegroundColor = t;
-
-            return currentScoringNode;
-        }
-
-
         public static void Main()
         {
-            var input = @"5 7
-....#..
-..###..
-..#.#..
-..###..
-..#....
-";
-            // Create Stream and stream reader
-            // REM : use stream to convert to FileStream
-            var inputStream = input.AsStream();
+            const string FILE_NAME = @"Samples/doodle.txt";
 
-           // var inputStream = File.OpenRead(@"C:\Users\Vincent\Downloads\doodle.txt");
+            Cell[,] matrix;
+            Size gridSize;
 
-            var reader = new StreamReader(inputStream);
+            StringBuilder sbOut = new StringBuilder();
 
-            // parse first line
-            var gridSize = GetGridSize(reader);
-
-            //Console.WriteLine(gridSize[0]);
-            //Console.WriteLine(gridSize[1]);
-
-
-
-            // create table  bool[,]
-            matrix = reader.CreateMatrix<Cell, char>(gridSize, Initializer);
-
-            List<CellScoring> bestScores = new List<CellScoring>();
-            // read from top-left , for each 'true'  call getWeight
-            // put Weight in List
-
-
-            for (int r = 0; r < gridSize.Height; r++)
+            using (var inputStream = File.OpenRead(FILE_NAME))
             {
-                for (int c = 0; c < gridSize.Width; c++)
-                {
-                    var cellscore = ComputeCellScoring(new Point(c, r));
-                    bestScores.Add(cellscore);
-                }
+                var reader = new StreamReader(inputStream);
+
+                // parse first line to get Matrix Size
+                gridSize = GetGridSize(reader);
+
+                // Init grid with cell with basic score
+                matrix = reader.CreateMatrix<Cell, char>(gridSize, CellFactory);
+
+                reader.Close();
+                inputStream.Close();
             }
 
 
-            // sort list by weight 
-            var sorted = bestScores.Where(s => s.Score >= 1).OrderByDescending(w => w.Score).ToList();
+            // Find best score for each cell
+            int[] current = {0};
+            var firstThread = 0;
+            var max = gridSize.Width * gridSize.Height;
 
-            // foreach createInstruction >  list.first() , 
-            var instructions = 0;
+            Console.WriteLine();
+            Console.WriteLine("####  LOOK FOR BEST SQUARE FOR ALL CELL  #####");
+            Console.WriteLine();
+
+            Parallel.For(0, gridSize.Height, (r, p) =>
+            {
+                for (var c = 0; c < gridSize.Width; c++)
+                {
+                    var cell = matrix[r, c];
+                    cell.ComputeCellScoring();
+                    current[0]++;
+
+                    if (firstThread == 0)
+                    {
+                        firstThread = Thread.CurrentThread.ManagedThreadId;
+                    }
+                    if (firstThread == Thread.CurrentThread.ManagedThreadId)
+                        ConsoleExtensions.ProgressBar(current[0], max, 70);
+                }
+            }
+            );
+            ConsoleExtensions.ProgressBar(max, max, 70);
+
+            // SAVE First pass !
+            //matrix.Save(Path.GetFullPath("first-pass.bin"));
+
+            Console.WriteLine();
+            Console.WriteLine();
+            Console.WriteLine("####  START PRINT  #####");
+            Console.WriteLine();
+
+            
+           var sorted = matrix
+               .ToEnumerable()
+               .Where(c => c.BestScore.Score >= 1)
+               .OrderByDescending(c=> c.BestScore.Size)
+               .ThenByDescending(c => c.BestScore.Score)
+               .ToList();
+
+            var allCellCount = sorted.Count;
+          
+            int instructions = 0;
+
             while (sorted.Any())
             {
-                var first = sorted.FirstOrDefault();
+                var first = sorted.First();
 
-                if (first.Score == 0 && first.Size == 0)
+                // TROP LENT !!!
+                //var currentScore = first.BestScore.Score;
+
+                //first.BestScore = null;
+                //first.ComputeCellScoring();
+
+                //if (Math.Abs(currentScore - first.BestScore.Score) > 0.1)
+                //{
+                //    sorted = sorted
+                //        .Where(c => c.BestScore.Score >= 1)
+                //        .OrderByDescending(c => c.BestScore.Size)
+                //        .ThenByDescending(c => c.BestScore.Score).ToList();
+               
+                //    continue;
+                //}
+
+                var bestScore = first.BestScore;
+                if (bestScore.Score < 1 && bestScore.Size == 0)
                 {
-                    sorted.RemoveAt(0);
+                   // first.HasBeenProcessed = true;
+                   // sorted.RemoveAt(0);
                     continue;
                 }
 
-                // IL FAUT LA LISTE DES CELL A DELETE !!!!
-                Console.WriteLine("PRINTSQ {0} {1} {2} - SCORE : {3}", first.Cell.Y, first.Cell.X, first.Size, first.Score);
-                instructions ++;
+                bestScore.PRINTSQ(sbOut);
+                instructions++;
 
-                CellToDelete.AddRange(first.CellToClear());
-                SetValueToFalse(first);
+                if(instructions%100 == 0)
+                    ExportMatrixtoBitmap(matrix, instructions);
 
+                var impatedCells = bestScore.CellInSquare
+                    .SelectMany(c => c.BestScore.CellInSquare).Distinct().ToList(); //.OrderByDescending(c=>c.BestScore.Score);
+
+
+                Parallel.ForEach(impatedCells, cell =>
+                {
+                    cell.BestScore = null;
+                    cell.ComputeCellScoring();
+                });
+               
                 sorted.RemoveAt(0);
-
-                var cellToDraw = sorted.Select(s => s.Cell);
-                bestScores = cellToDraw.Select(c => c.SortedScorings.First()).ToList();
-                sorted = bestScores.OrderByDescending(s => s.Score).ToList();
-
+                sorted = sorted
+                        .Where(c => c.BestScore.Score >= 1)
+                        .OrderByDescending(c=> c.BestScore.Size)
+                        .ThenByDescending(c => c.BestScore.Score).ToList();
+               
+                ConsoleExtensions.ProgressBar(allCellCount - sorted.Count, allCellCount, 70, ConsoleColorSet.Blue);
             }
 
-            foreach (var tileScoring in CellToDelete)
+            var cellToDelete = matrix.ToEnumerable().Where(c => c.NeedToBeClean);
+            foreach (var cell in cellToDelete)
             {
-                Console.WriteLine("ERASECELL {0} {1}", tileScoring.Y, tileScoring.X);
-                instructions ++;
+                cell.ERASECELL(sbOut);
+                instructions++;
             }
+
+            using (var sw = File.CreateText("instruction.txt"))
+            {
+                sw.WriteLine(instructions);
+                sw.Write(sbOut.ToString());
+            }
+           
 
             Console.WriteLine("nb instrauctions : " + instructions);
-            Console.WriteLine(Process.GetCurrentProcess().TotalProcessorTime.Milliseconds + "ms");
+            Console.WriteLine(Process.GetCurrentProcess().TotalProcessorTime.Milliseconds);
             Console.WriteLine(Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024 + "MB in RAM memory");
             Console.WriteLine(Process.GetCurrentProcess().PrivateMemorySize64 / 1024 / 1024 + "MB in RAM memory");
 
             Console.WriteLine(Process.GetCurrentProcess().VirtualMemorySize64 / 1024 / 1024 + "MB in RAM memory");
 
+
             Console.ReadLine();
         }
 
-        private static void SetValueToFalse(CellScoring scoring)
+        private static void ExportMatrixtoBitmap(Cell[,] matrix, int nbInstruction)
         {
-            //DumpMatrix();
-            for (int i = scoring.TopLeft.Y; i <= scoring.BottomRight.Y; i++)
-            {
-                for (int j = scoring.TopLeft.X; j <= scoring.BottomRight.X; j++)
-                {
-                    matrix[i, j].Value = false;
-                }
-            }
-            Console.WriteLine();
-            //DumpMatrix();
+            var outputFile = nbInstruction.ToString("000000000") + ".bmp";
+
+            matrix.ToBitmap(
+                outputFile,
+                ColorExport,
+                false);
         }
 
-        //private static void DumpMatrix()
-        //{
-        //    for (int r = 0; r < matrix.GetLength(0); r++)
-        //    {
-        //        for (int c = 0; c < matrix.GetLength(1); c++)
-        //        {
-        //            var val = matrix[r, c].Value ? "#" : ".";
-        //            Console.Write(val);
-        //        }
-        //        Console.WriteLine();
-        //    }
-        //}
-
-        private static Cell Initializer(int x, int y, char val, Cell[,] matrix)
+        private static Color ColorExport(Cell cell)
         {
-            var value = val != '.';
-            var cell = new Cell
-            {
-                Matrix = matrix,
-                Value = value,
-                X = x,
-                Y = y,
 
+            if (cell.NeedToBeClean)
+                return Color.Blue;
+
+            if (cell.HasBeenProcessed)
+                return Color.Red;
+
+            if (cell.HasBeenPrint)
+                return Color.Green;
+
+            if (cell.Value)
+                return Color.Black;
+            return Color.White;
+        }
+
+
+        private static Cell CellFactory(int y, int x, char val, Cell[,] grid)
+        {
+            return new Cell
+            {
+                Matrix = grid,
+                Value = val != '.',
+                Position = new Point(x, y)
 
             };
-            cell.Scorings.Add(
-                new CellScoring
-                {
-                    Size = 0,
-                    Cell = cell
-                });
-            return cell;
         }
 
         private static Size GetGridSize(StreamReader reader)
         {
-            var gridSize = reader.ReadLineSplitAndParse<int>().ToArray();
+            var gridSize = reader.ExtractValues<int>().ToArray();
             var size = new Size(gridSize[1], gridSize[0]);
 
-            Logger.Debug(string.Format("Width {0}, Height {1}", size.Width, size.Height));
+            // Logger.Debug(string.Format("Width {0}, Height {1}", size.Width, size.Height));
             return size;
         }
+
+
     }
 }
